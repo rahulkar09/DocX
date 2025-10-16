@@ -192,20 +192,46 @@ const Navbar = () => {
           )}
 
           {token && userData && (
-            <div className="mt-8 flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
-              <img
-                src={userData.image}
-                alt="profile"
-                className="w-10 h-10 rounded-full object-cover"
-              />
-              <div className="flex-1">
-                <p className="font-semibold text-gray-800">{userData.name}</p>
+            <div className="mt-8 space-y-4">
+              {/* Profile Card */}
+              <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
+                <img
+                  src={userData.image}
+                  alt="profile"
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-800">{userData.name}</p>
+                  <p className="text-xs text-gray-500">{userData.email}</p>
+                </div>
+              </div>
+
+              {/* Profile Navigation Links */}
+              <div className="flex flex-col gap-3 px-2">
+                <button
+                  onClick={() => {
+                    navigate('/myprofile')
+                    setShowMenu(false)
+                  }}
+                  className="text-left py-3 px-4 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition-colors duration-200"
+                >
+                  My Profile
+                </button>
+                <button
+                  onClick={() => {
+                    navigate('/myappointment')
+                    setShowMenu(false)
+                  }}
+                  className="text-left py-3 px-4 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition-colors duration-200"
+                >
+                  My Appointments
+                </button>
                 <button
                   onClick={() => {
                     logout()
                     setShowMenu(false)
                   }}
-                  className="text-sm text-primary hover:text-indigo-700 transition-colors duration-200"
+                  className="text-left py-3 px-4 rounded-lg text-red-600 hover:bg-red-50 font-medium transition-colors duration-200"
                 >
                   Logout
                 </button>
