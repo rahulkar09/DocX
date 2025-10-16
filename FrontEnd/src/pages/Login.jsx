@@ -20,7 +20,7 @@ const Login = () => {
   const onSubmitHandler = async (event) => {
     event.preventDefault();
     try{
-      if(state == "Sing up"){
+      if(state == "Sign up"){
         const {data} = await axios.post(backendUrl + '/api/user/register' , {name ,password,email})
         if(data.success) {
           localStorage.setItem('token' , data.token)
@@ -52,7 +52,7 @@ const Login = () => {
 
       }
 
-    },[token])
+    },[token,navigate])
 
   return (
     <form
