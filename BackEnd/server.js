@@ -27,11 +27,15 @@ app.get('/',(req,res) => {
     res.send("Api Working")
 })
 
-dbConnect();
-connectCloudinary();
-
-app.listen(PORT , ()=>{
-    console.log("server started at port number" , PORT)
-})
+// Connect to database and start server
+dbConnect().then(() => {
+    connectCloudinary();
+    app.listen(PORT , ()=>{
+        console.log("Server started at port", PORT)
+    })
+}).catch((err) => {
+    console.error("Failed to start server:", err.message);
+    process.exit(1);
+});
 
 

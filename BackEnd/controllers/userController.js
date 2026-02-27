@@ -13,23 +13,32 @@ const registerUser = async (req,res)=>{
           const {name , email , password} = req.body
 
           if(!name || !password || !email){
-            return res.json({
+            return res.status(400).json({
                 success : false,
                 message : "Missing details"
             })
           }
        if(!validator.isEmail(email)){
-         return res.json({
+         return res.status(400).json({
                 success : false,
                 message : "Enter a valid email"
             })
        }
 
        if(password.length < 8){
-         return res.json({
+         return res.status(400).json({
                 success : false,
                 message : "Enter a strong password"
             })
+       }
+
+       // prevent duplicate registration
+       const existing = await userModel.findOne({ email });
+       if (existing) {
+         return res.status(400).json({
+           success: false,
+           message: "User already registered with this email",
+         });
        }
 
 
@@ -46,11 +55,11 @@ const registerUser = async (req,res)=>{
      const newUser = new userModel(userData)
      const user = await newUser.save()
      
-     const token = jwt.sign({id:user._id}  , process.env.JWT_SECRET )
+     const token = jwt.sign({id:user._id}  , process.env.JWT_SECRET , { expiresIn: '7d' })
      
      
      
-     res.json({
+     res.status(201).json({
         success : true,
         token
      })
@@ -75,28 +84,34 @@ const registerUser = async (req,res)=>{
 const loginUser = async(req,res)=>{
     try{
         const {email , password } = req.body
-        const user = await userModel.findOne({email})
 
-
-        if(!user){
-            return res.json({
-                success : false,
-                message : "User doesnot exist"
-            })
+        if (!email || !password) {
+          return res.status(400).json({
+            success: false,
+            message: "Email and password are required",
+          });
         }
 
+        const user = await userModel.findOne({email})
+
+        if(!user){
+            return res.status(404).json({
+                success : false,
+                message : "User does not exist"
+            })
+        }
 
         const isMatch = await bcrypt.compare(password , user.password)
 
         if(isMatch){
-            const token = jwt.sign({id:user._id} , process.env.JWT_SECRET)
-            res.json({
+            const token = jwt.sign({id:user._id} , process.env.JWT_SECRET, { expiresIn: '7d' })
+            return res.json({
                 success : true,
                 token
             })
         }
         else{
-            return res.json({
+            return res.status(401).json({
                 success : false,
                 message : "Invalid credentials"
             })
@@ -106,7 +121,7 @@ const loginUser = async(req,res)=>{
     }
     catch(error){
        console.log(error)
-       res.json({
+       res.status(500).json({
         success : false, 
         message : error.message
        })
@@ -141,14 +156,22 @@ const updateProfile = async(req,res)=>{
         const { name , phone , address ,dob , gender} = req.body
         const imageFile = req.file
 
-        if(!name || !phone || !address || !dob || !gender){
-            return res.json({
+        // allow partial updates but at least one field should be present
+        if(!name && !phone && !address && !dob && !gender && !imageFile){
+            return res.status(400).json({
                 success : false,
-                message : "Data missing"
+                message : "Nothing to update"
             })
         }
 
-        await userModel.findByIdAndUpdate(userId , { name,phone,address,dob,gender})
+        const updateFields = {};
+        if (name) updateFields.name = name;
+        if (phone) updateFields.phone = phone;
+        if (address) updateFields.address = address;
+        if (dob) updateFields.dob = dob;
+        if (gender) updateFields.gender = gender;
+
+        await userModel.findByIdAndUpdate(userId , updateFields)
 
         if(imageFile){
             const uploadImage = await cloudinary.uploader.upload(imageFile.path , {resource_type: 'image'})
@@ -165,7 +188,7 @@ const updateProfile = async(req,res)=>{
     }
     catch(error){
        console.log(error)
-       res.json({
+       res.status(500).json({
         success : false, 
         message : error.message
        })  
@@ -177,20 +200,32 @@ const bookAppointment = async(req,res)=>{
     try{
         const userId = req.user.id
         const {docId , slotDate , slotTime} = req.body
+
+        if (!docId || !slotDate || !slotTime) {
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide docId, slotDate and slotTime',
+          });
+        }
+
         const docData  = await doctorModel.findById(docId).select('-password')
+        if (!docData) {
+          return res.status(404).json({ success: false, message: 'Doctor not found' });
+        }
 
         if(!docData.available){
-            return res.json({
+            return res.status(400).json({
                 success : false,
                 message : "Doctor not available"
             })
         }
-        let slot_booked = docData.slot_booked
+        // ensure we have an object to mutate
+        let slot_booked = docData.slot_booked || {}
 
-        // checking for slots availiblity
+        // checking for slots availability
         if(slot_booked[slotDate]){
             if(slot_booked[slotDate].includes(slotTime)){
-                return res.json({
+                return res.status(409).json({
                     success : false,
                     message : "Slot not available"
                 })
@@ -206,17 +241,18 @@ const bookAppointment = async(req,res)=>{
 
         const userData =await userModel.findById(userId).select('-password')
 
-        delete docData.slot_booked
-
+        // do not send internal slot data back to client
+        const safeDocData = { ...docData.toObject() }
+        delete safeDocData.slot_booked
 
         const appointmentData = {
-            userId , docData , userData , docId , amount : docData.fees , slotTime , slotDate , date : Date.now()
+            userId , docData: safeDocData , userData , docId , amount : docData.fees , slotTime , slotDate , date : Date.now()
         }
 
         const newAppointment = new appointmentModel(appointmentData)
         await newAppointment.save()
 
-        //save new slots in docData
+        // save new slots in doctor
        await doctorModel.findByIdAndUpdate(docId, { slot_booked });
        res.json({
       success: true,
@@ -226,7 +262,7 @@ const bookAppointment = async(req,res)=>{
     }
     catch(error){
         console.log(error);
-    res.json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: error.message });
 
     }
 }
@@ -234,11 +270,12 @@ const bookAppointment = async(req,res)=>{
 // GET /api/user/my-appointments
 const getMyAppointments = async (req, res) => {
   try {
-    const userId = req.user.id; // Make sure middleware sets req.user = userId
-    const appointments = await appointmentModel.find({ userId }).populate('docData', '-password');
+    const userId = req.user.id; // middleware attaches user
+    const appointments = await appointmentModel.find({ userId });
+    // docData is stored as an object, not a ref, so populate does nothing
     res.json({ success: true, appointments });
   } catch (err) {
-    res.json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -246,10 +283,25 @@ const getMyAppointments = async (req, res) => {
 const cancelAppointment = async (req, res) => {
   try {
     const appointmentId = req.params.id;
+    const appointment = await appointmentModel.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+
+    // release the slot in doctor's schedule
+    const { docId, slotDate, slotTime } = appointment;
+    if (docId) {
+      const doc = await doctorModel.findById(docId);
+      if (doc && doc.slot_booked && doc.slot_booked[slotDate]) {
+        doc.slot_booked[slotDate] = doc.slot_booked[slotDate].filter(t => t !== slotTime);
+        await doc.save();
+      }
+    }
+
     await appointmentModel.findByIdAndDelete(appointmentId);
     res.json({ success: true, message: 'Appointment cancelled successfully' });
   } catch (err) {
-    res.json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -262,9 +314,9 @@ const updateAppointmentStatus = async (req, res) => {
 
     // Validate
     if (typeof isCompleted !== "boolean") {
-      return res.json({
+      return res.status(400).json({
         success: false,
-        message: "isComplete must be a boolean value (true or false)",
+        message: "isCompleted must be a boolean value (true or false)",
       });
     }
 
@@ -275,7 +327,7 @@ const updateAppointmentStatus = async (req, res) => {
     );
 
     if (!updated) {
-      return res.json({
+      return res.status(404).json({
         success: false,
         message: "Appointment not found",
       });
@@ -288,7 +340,7 @@ const updateAppointmentStatus = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-    res.json({
+    res.status(500).json({
       success: false,
       message: err.message,
     });

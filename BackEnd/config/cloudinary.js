@@ -11,4 +11,4 @@ const connectCloudinary = () => {
   console.log("✅ Cloudinary configured");
 };
 
-module.exports = connectCloudinary;
+module.exports = connectCloudinary

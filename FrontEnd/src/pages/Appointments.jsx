@@ -51,30 +51,7 @@ const Appointments = () => {
   }, [docid]);
 
   // Generate 7-day slots dynamically
-  const getAvailableSlots = () => {
-    if (!docInfo) return;
 
-    const today = new Date();
-    const slots = [];
-
-    for (let i = 0; i < 7; i++) {
-      const currentDate = new Date(today);
-      currentDate.setDate(today.getDate() + i);
-
-      const dateString = currentDate.toISOString().split('T')[0];
-      const daySlots = [];
-
-      // Clinic hours: 10 AM – 8 PM, every 1 hour slot
-      for (let hour = 10; hour < 20; hour++) {
-        const timeString = `${hour}:00 - ${hour + 1}:00`;
-        daySlots.push(timeString);
-      }
-
-      slots.push({ date: dateString, times: daySlots });
-    }
-
-    setDocSlots(slots);
-  };
 
   useEffect(() => {
     getAvailableSlots();
