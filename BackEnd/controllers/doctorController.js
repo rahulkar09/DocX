@@ -5,18 +5,34 @@ const appointmentModel = require("../models/appointmentModel");
 require("dotenv").config();
 
 // ✅ Change doctor availability
-const changeAvailablity = async (req, res) => {
+const changeAvailability = async (req, res) => {
   try {
     const { docId } = req.body;
+    
+    // Input validation
+    if (!docId) {
+      return res.json({
+        success: false,
+        message: "Doctor ID is required",
+      });
+    }
+    
     const docData = await doctorModel.findById(docId);
+    if (!docData) {
+      return res.json({
+        success: false,
+        message: "Doctor not found",
+      });
+    }
+    
     await doctorModel.findByIdAndUpdate(docId, { available: !docData.available });
-    res.json({
+    return res.json({
       success: true,
       message: "Availability Changed",
     });
   } catch (err) {
     console.log(err);
-    res.json({
+    return res.json({
       success: false,
       message: err.message,
     });
@@ -45,6 +61,15 @@ const doctorList = async (req, res) => {
 const loginDoctor = async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    // Input validation
+    if (!email || !password) {
+      return res.json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
+    
     const doctor = await doctorModel.findOne({ email });
 
     if (!doctor) {
@@ -74,7 +99,7 @@ const loginDoctor = async (req, res) => {
     }
   } catch (error) {
     console.log(error);
-    res.json({
+    return res.json({
       success: false,
       message: error.message,
     });
@@ -189,15 +214,29 @@ const updateDoctorProfile = async (req, res) => {
   try {
     const docId = req.user.id;
     const { fees, address, available } = req.body;
-    await doctorModel.findByIdAndUpdate(docId, { fees, address, available });
+    
+    // Input validation
+    if (!fees && address === undefined && available === undefined) {
+      return res.json({
+        success: false,
+        message: "At least one field (fees, address, or available) is required to update",
+      });
+    }
+    
+    const updateData = {};
+    if (fees !== undefined) updateData.fees = fees;
+    if (address !== undefined) updateData.address = address;
+    if (available !== undefined) updateData.available = available;
+    
+    await doctorModel.findByIdAndUpdate(docId, updateData);
 
     return res.json({
       success: true,
-      message: "profile updated",
+      message: "Profile updated successfully",
     });
   } catch (error) {
     console.log(error);
-    res.json({
+    return res.json({
       success: false,
       message: error.message,
     });
@@ -206,7 +245,7 @@ const updateDoctorProfile = async (req, res) => {
 
 // ✅ Export all controllers
 module.exports = {
-  changeAvailablity,
+  changeAvailability,
   doctorList,
   loginDoctor,
   appointmentDoctor,

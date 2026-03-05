@@ -128,14 +128,40 @@ const loginAdmin = async (req, res) => {
     }
 }
 
-//api to get all doctors
+//api to get all doctors with search and pagination
 const allDoctors = async(req,res)=> {
     try{
-        const doctors = await doctorModel.find({}).select('-password')
+        const { page = 1, limit = 10, search = '' } = req.query
+
+        const query = {}
+
+        if (search.trim()) {
+            const regex = new RegExp(search.trim(), 'i')
+            query.$or = [
+                { name: regex },
+                { email: regex },
+                { speciality: regex },
+            ]
+        }
+
+        const skip = (Number(page) - 1) * Number(limit)
+        const total = await doctorModel.countDocuments(query)
+        const doctors = await doctorModel
+            .find(query)
+            .select('-password')
+            .skip(skip)
+            .limit(Number(limit))
+            .sort({ date: -1 })
 
         res.json({
-            success:true,
-            doctors
+            success: true,
+            doctors,
+            pagination: {
+                total,
+                page: Number(page),
+                limit: Number(limit),
+                totalPages: Math.ceil(total / Number(limit)),
+            }
         })
     }
     catch(err){
