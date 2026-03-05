@@ -7,60 +7,82 @@ import { assets } from '../assets/assets_frontend/assets';
 
 const Appointments = () => {
   const { docid } = useParams();
-  const { doctors, currency, token, backendUrl } = useContext(Appcontext);
+  const { doctors, currency, token, backendUrl, getDoctorsData } = useContext(Appcontext);
 
   const [docInfo, setDocInfo] = useState(null);
   const [docSlots, setDocSlots] = useState([]);
   const [slotIndex, setSlotIndex] = useState(0);
   const [slotTime, setSlotTime] = useState('');
-  const [bookedSlots, setBookedSlots] = useState([]); // ✅ Track booked slots
+  const [loading, setLoading] = useState(true);
 
   // Fetch doctor info from context
   const fetchDocInfo = () => {
     const foundDoc = doctors.find((doc) => doc._id === docid);
     setDocInfo(foundDoc || null);
+    setLoading(false);
   };
 
   useEffect(() => {
-    fetchDocInfo();
+    if (doctors.length > 0) {
+      fetchDocInfo();
+    }
   }, [doctors, docid]);
 
-  // ✅ Fetch booked appointments for this doctor
-  const fetchBookedSlots = async () => {
-    try {
-      const { data } = await axios.get(
-        `${backendUrl}/api/user/doctor-booked-slots/${docid}`
-      );
+  // Generate 7-day slots dynamically, excluding already-booked times
+  const getAvailableSlots = () => {
+    if (!docInfo) return;
 
-      if (data.success) {
-        // Store booked slots as array of "date|time" strings for quick lookup
-        const bookedSlotKeys = data.appointments.map(
-          (apt) => `${apt.slotDate}|${apt.slotTime}`
-        );
-        setBookedSlots(bookedSlotKeys);
+    const allSlots = [];
+    const today = new Date();
+
+    for (let i = 0; i < 7; i++) {
+      const currentDate = new Date(today);
+      currentDate.setDate(today.getDate() + i);
+
+      // Build the slot date string as "day_month_year" to match backend format
+      const slotDate = `${currentDate.getDate()}_${currentDate.getMonth() + 1}_${currentDate.getFullYear()}`;
+
+      const times = [];
+
+      // Start at 10:00 AM, end at 9:00 PM
+      let startHour = 10;
+      const endHour = 21;
+
+      // If today, skip past hours
+      if (i === 0) {
+        const nowHour = today.getHours();
+        if (nowHour >= startHour) {
+          startHour = nowHour + 1; // start from next hour
+        }
       }
-    } catch (err) {
-      console.error('Error fetching booked slots:', err);
+
+      for (let hour = startHour; hour < endHour; hour++) {
+        // Two slots per hour: :00 and :30
+        for (const minutes of ['00', '30']) {
+          const h = hour > 12 ? hour - 12 : hour;
+          const ampm = hour >= 12 ? 'PM' : 'AM';
+          const displayHour = h === 0 ? 12 : h;
+          const timeStr = `${displayHour}:${minutes} ${ampm}`;
+
+          // Check if this slot is already booked (using doctor's slot_booked data)
+          const bookedForDate = docInfo.slot_booked?.[slotDate] || [];
+          if (!bookedForDate.includes(timeStr)) {
+            times.push(timeStr);
+          }
+        }
+      }
+
+      if (times.length > 0) {
+        allSlots.push({ date: slotDate, times });
+      }
     }
+
+    setDocSlots(allSlots);
   };
-
-  useEffect(() => {
-    if (docid) {
-      fetchBookedSlots();
-    }
-  }, [docid]);
-
-  // Generate 7-day slots dynamically
-
 
   useEffect(() => {
     getAvailableSlots();
   }, [docInfo]);
-
-  // ✅ Check if a slot is already booked
-  const isSlotBooked = (date, time) => {
-    return bookedSlots.includes(`${date}|${time}`);
-  };
 
   // Book appointment API
   const bookAppointment = async () => {
@@ -74,13 +96,6 @@ const Appointments = () => {
       return;
     }
 
-    // ✅ Check if slot is already booked before making API call
-    const selectedDate = docSlots[slotIndex].date;
-    if (isSlotBooked(selectedDate, slotTime)) {
-      toast.error('This slot is already booked. Please select another time.');
-      return;
-    }
-
     try {
       const { data } = await axios.post(
         `${backendUrl}/api/user/book-appointment`,
@@ -90,20 +105,37 @@ const Appointments = () => {
 
       if (data.success) {
         toast.success('Appointment booked successfully!');
-        // ✅ Add the newly booked slot to local state
-        setBookedSlots([...bookedSlots, `${docSlots[slotIndex].date}|${slotTime}`]);
-        setSlotTime(''); // Clear selection
+        setSlotTime('');
+        // Refresh doctor data so slot_booked is up-to-date
+        if (getDoctorsData) getDoctorsData();
       } else {
         toast.error(data.message);
       }
     } catch (err) {
-      console.log(err);
+      console.error(err);
       toast.error(err.response?.data?.message || 'Something went wrong');
     }
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <span className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></span>
+      </div>
+    );
+  }
+
+  // Doctor not found
+  if (!docInfo) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <p className="text-gray-500 text-lg">Doctor not found.</p>
+      </div>
+    );
+  }
+
   return (
-    docInfo && (
       <div className="w-full flex flex-col md:flex-row gap-8 p-6">
         {/* Doctor Image */}
         <div className="w-full md:w-1/3 flex justify-center">
@@ -168,39 +200,36 @@ const Appointments = () => {
                       : 'bg-white border border-gray-300 text-gray-600 hover:border-blue-400'
                   }`}
                 >
-                  {new Date(day.date).toLocaleDateString('en-US', { 
-                    month: 'short', 
-                    day: 'numeric' 
-                  })}
+                  {(() => {
+                    const [d, m, y] = day.date.split('_');
+                    return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    });
+                  })()}
                 </button>
               ))}
             </div>
 
             {/* Time Slots */}
             <div className="flex flex-wrap gap-2">
-              {docSlots[slotIndex]?.times.map((time, i) => {
-                const isBooked = isSlotBooked(docSlots[slotIndex].date, time);
-                
-                return (
-                  <button
-                    key={i}
-                    onClick={() => !isBooked && setSlotTime(time)}
-                    disabled={isBooked}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
-                      isBooked
-                        ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed line-through'
-                        : slotTime === time
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-md'
-                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-blue-50'
-                    }`}
-                  >
-                    {time}
-                    {isBooked && (
-                      <span className="ml-1 text-xs">🔒</span>
-                    )}
-                  </button>
-                );
-              })}
+              {docSlots[slotIndex]?.times.map((time, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSlotTime(time)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                    slotTime === time
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                  }`}
+                >
+                  {time}
+                </button>
+              ))}
+              {docSlots[slotIndex]?.times.length === 0 && (
+                <p className="text-gray-500 text-sm">No available slots for this day.</p>
+              )}
             </div>
 
             {/* ✅ Selected Slot Info */}
@@ -227,7 +256,6 @@ const Appointments = () => {
           </div>
         </div>
       </div>
-    )
   );
 };
 
